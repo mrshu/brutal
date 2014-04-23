@@ -237,12 +237,16 @@ class Action(object):
         self.time_stamp = time.time()
         self.action_version = DEFAULT_ACTION_VERSION
 
+        self.action_type = action_type
+        self.meta = meta or {}
+
         self.scope = None
         if self.source_event is not None:
             self.scope = self.source_event.scope
 
-        self.action_type = action_type
-        self.meta = meta or {}
+            if self.scope == 'private':
+                self.meta["to"] = self.source_event.meta.get("from")
+
 
     def __repr__(self):
         return "<{0} {1}:{2} dest:{3}>".format(self.__class__.__name__, self.source_bot.nick, self.action_type,

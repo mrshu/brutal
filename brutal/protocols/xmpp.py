@@ -85,6 +85,35 @@ class MucBot(muc.MUCClient):
         self.backend.handle_event(raw_event)
 
 
+class PrivateChatBot(xmppim.MessageProtocol):
+
+    def __init__(self, backend):
+        super(PrivateChatBot, self).__init__()
+        self.log = logging.getLogger('{0}.{1}'.format(self.__class__.__module__, self.__class__.__name__))
+        self.backend = backend
+
+    def connectionMade(self):
+
+        # send initial presence
+        self.send(xmppim.AvailablePresence())
+
+    def connectionLost(self, reason):
+        pass
+
+    def onMessage(self, message):
+        if message is not None and hasattr(message, "body") and message.body != None:
+            self.log.debug('{0!r} - {1} - {2} - {3}'.format(message, str(message.body), message["from"], message["type"]))
+
+            if message["type"] == "chat":
+                event_data = {
+                        'type': 'message',
+                        'scope': 'private',
+                        'meta': {'from': message["from"],
+                                 'body': str(message.body)}}
+
+                self.backend.handle_event(event_data)
+
+
 class ClientKeepalive(XMPPHandler):
     DEFAULT_INTERVAL = 15.0
     lc = None
@@ -166,6 +195,9 @@ class XmppBackend(ProtocolBackend):
         self.presence.setHandlerParent(self.client)
         self.presence.available()
 
+        self.privatechat_handler = PrivateChatBot(backend=self)
+        self.privatechat_handler.setHandlerParent(self.client)
+
         self.keepalive = ClientKeepalive(interval=self.keepalive_freq)
         self.keepalive.setHandlerParent(self.client)
 
@@ -176,9 +208,15 @@ class XmppBackend(ProtocolBackend):
             body = action.meta.get('body')
             if body:
                 if action.destination_rooms:
-                    for room in action.destination_rooms:
-                        if action.scope == 'public':
+                    if action.scope == 'public':
+                        for room in action.destination_rooms:
                             # TODO: replace this with an actual room lookup of known rooms
                             room_jid = jid.internJID(room)
                             message = muc.GroupChat(recipient=room_jid, body=body)
                             self.client.send(message.toElement())
+                    if action.scope == 'private':
+                        to = action.meta.get('to')
+                        message = xmppim.Message(recipient=jid.internJID(to),
+                                                    sender=self.bot_jid,
+                                                    body=body)
+                        self.client.send(message.toElement())
